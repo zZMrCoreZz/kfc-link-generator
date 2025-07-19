@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8">
+  <title>KFC Link Generator</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 20px;
+      background: #f4f4f4;
+    }
+    h2 {
+      text-align: center;
+    }
+    label {
+      font-weight: bold;
+    }
+    input, select, button {
+      display: block;
+      margin-bottom: 15px;
+      width: 100%;
+      padding: 10px;
+      font-size: 16px;
+    }
+    #links div {
+      background: #fff;
+      padding: 10px;
+      margin-bottom: 5px;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+    }
+    .copy-btn {
+      background-color: #007bff;
+      color: white;
+      border: none;
+      margin-top: 5px;
+      padding: 5px;
+      cursor: pointer;
+    }
+    #qr-scanner {
+      width: 100%;
+      margin-bottom: 15px;
+    }
+  </style>
+</head>
+<body>
+
+<h2>KFC Link Generator</h2>
+
+<label for="scannedResult">1. Сканируй чек или вставь ссылку с QR кода:</label>
+<input type="text" id="scannedResult" placeholder="Вставь ссылку здесь">
+
+<button onclick="startQRScanner()">📷 Сканировать QR-код</button>
+<input type="file" id="imageInput" accept="image/*">
+<div id="qr-scanner" style="display:none;"></div>
+
+<label for="selectedDate">2. Дата (можно менять):</label>
+<input type="date" id="selectedDate">
+
+<label for="startTime">3. Время начала:</label>
+<input type="time" id="startTime" value="10:00">
+
+<label for="endTime">4. Время окончания:</label>
+<input type="time" id="endTime">
+
+<label for="linkCount">5. Сколько ссылок сгенерировать:</label>
+<input type="number" id="linkCount" value="10">
+
+<button onclick="generateLinks()">🔗 Сгенерировать ссылки</button>
+
+<h3>Ссылки:</h3>
+<div id="links"></div>
+
+<script src="https://unpkg.com/html5-qrcode"></script>
+<script>
+  let html5QrCode;
+
+  function setDefaultDateTime() {
+    const now = new Date();
+    document.getElementById("selectedDate").valueAsDate = now;
+    document.getElementById("endTime").value = now.toTimeString().slice(0,5);
+  }
+
+  function startQRScanner() {
+    const scannerDiv = document.getElementById("qr-scanner");
+    scannerDiv.style.display = "block";
+    html5QrCode = new Html5Qrcode("qr-scanner");
+    html5QrCode.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: 250 },
+      onScanSuccess
+    ).catch(err => {
+      alert("Ошибка при доступе к камере: " + err);
+    });
+  }
+
+  function onScanSuccess(decodedText) {
+    document.getElementById("scannedResult").value = decodedText;
+    stopScanner();
+  }
+
+  function stopScanner() {
+    if (html5QrCode) {
+      html5QrCode.stop().then(() => {
+        document.getElementById("qr-scanner").style.display = "none";
+      }).catch(err => {
+        console.error("Ошибка при остановке сканера", err);
+      });
+    }
+  }
+
+  document.getElementById("imageInput").addEventListener("change", function() {
+    const file = this.files[0];
+    if (!file) return;
+    const qr = new Html5Qrcode("qr-scanner");
+    qr.scanFile(file, true).then(decodedText => {
+      document.getElementById("scannedResult").value = decodedText;
+    }).catch(err => {
+      alert("QR не найден в изображении");
+    });
+  });
+
+  function parseLinkData(link) {
+    const url = new URL(link);
+    const params = new URLSearchParams(url.search);
+    return {
+      S: params.get("S"),
+      dateTime: decodeURIComponent(params.get("D")),
+      TI: parseInt(params.get("TI")),
+      lang: params.get("Q_Language") || "RO"
+    };
+  }
+
+  function generateLinks() {
+    const link = document.getElementById("scannedResult").value.trim();
+    const date = document.getElementById("selectedDate").value;
+    const startTime = document.getElementById("startTime").value;
+    const endTime = document.getElementById("endTime").value;
+    const count = parseInt(document.getElementById("linkCount").value);
+
+    if (!link || !startTime || !endTime || !count || !date) {
+      alert("Заполни все поля!");
+      return;
+    }
+
+    const data = parseLinkData(link);
+    const base = "https://customer.kfc-listens.com/jfe/form/SV_7WmLtfIDJuM3Vn8";
+    const start = new Date(`${date}T${startTime}`);
+    const end = new Date(`${date}T${endTime}`);
+    const diff = (end - start) / count;
+
+    let linksHTML = "";
+    for (let i = 0; i < count; i++) {
+      const ti = data.TI - (count - i);
+      const time = new Date(start.getTime() + diff * i);
+      const hh = String(time.getHours()).padStart(2, "0");
+      const mm = String(time.getMinutes()).padStart(2, "0");
+      const fullTime = `${date}%20${hh}%3A${mm}`;
+      const fullLink = `${base}?S=${data.S}&D=${fullTime}&TI=${ti}&Q_Language=${data.lang}`;
+      linksHTML += `
+        <div>
+          <a href="${fullLink}" target="_blank">${fullLink}</a><br>
+          <button class="copy-btn" onclick="copyText('${fullLink}')">📋 Копировать</button>
+        </div>`;
+    }
+
+    document.getElementById("links").innerHTML = linksHTML;
+  }
+
+  function copyText(text) {
+    navigator.clipboard.writeText(decodeURIComponent(text))
+      .then(() => alert("Скопировано!"))
+      .catch(() => alert("Ошибка при копировании!"));
+  }
+
+  setDefaultDateTime();
+</script>
+
+</body>
+</html>
